@@ -48,15 +48,14 @@ INT_NET = INT_IP[0:INT_IP.rfind('.')]
 
 print(f"External: {EXT_IP}:{EXT_PORT}")
 print(f"Internal IP: {INT_IP}")
-print(f"Network: {INT_NET}/24")
+print(f"Network: {INT_NET}.0/24")
 print("Scanning (this may take a while)...")
 
 #Iterate through IP range
 for ip in range(1,255):
     for port in TEST_PORTS:
         print(f"Host: {ip}", end='\r')
-        req_string = f"http://{EXT_IP}:{EXT_PORT}/{REQ_ENDPOINT}{INT_NET}.{ip}:{port}"
-        req_headers = {'User-Agent': 'Netscape Navigator 2.0'}
+        req_string = f"{req_base}/{REQ_ENDPOINT}{INT_NET}.{ip}:{port}"
         response = requests.get(req_string, headers = req_headers)
         if b'No route to host' not in response.content:
             print("\r", end='')
