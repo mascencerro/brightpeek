@@ -18,4 +18,5 @@ Hit: 192.168.73.10:1337 <-> Speed test failed on URL '192.168.73.10:1337', Reaso
 Ctrl-C pressed, exiting.
 Hosts located in scan:
 192.168.73.10
-Done.```
+Done.
+```
