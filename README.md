@@ -4,5 +4,5 @@
 
 Usage:
 ```
-brightpeek.py IP_ADDRESS:PORT_NUMBER
+brightpeek.py DEVICE_ADDRESS:DEVICE_PORT_NUMBER
 ```
