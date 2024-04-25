@@ -4,7 +4,11 @@
 
 Usage:
 ```
-brightpeek.py DEVICE_ADDRESS:DEVICE_PORT_NUMBER
+./brightpeek.py DEVICE_ADDRESS:DEVICE_PORT_NUMBER --pcap FILE_LOCATION
+
+Optional:
+    --pcap FILE_LOCATION         Use Network Diagnostics packet capture and store PCAP locally to LOCATION
+                            (Default location /tmp/capture.pcap)
 ```
 
 Example output:
