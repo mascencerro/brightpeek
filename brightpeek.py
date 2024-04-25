@@ -197,6 +197,8 @@ def main(args):
                 response = requests.get(req_string, headers=req_headers)
             except Exception as e:
                 print(f"Could not complete request. : {e}")
+                if (pcap_running):
+                    pcap_collect(False)
                 exit(1)
                 
             if 'No route to host' not in response.text.strip():
