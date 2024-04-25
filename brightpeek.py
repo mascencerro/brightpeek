@@ -135,7 +135,7 @@ if __name__ == '__main__':
         main(sys.argv)
     except KeyboardInterrupt:
         print("\n\nCtrl-C pressed, exiting.")
-        print_results()
     
+    print_results()
     print("Done.")
     
